@@ -11,7 +11,6 @@
 #define DEFAULT NULL
 
 uint32_t prefix_sum[MAXN];
-uint32_t check[MAXN];
 uint32_t encrypted_data[MAXN];
 
 typedef struct EncryptArg
@@ -20,7 +19,6 @@ typedef struct EncryptArg
 } EncryptArg;
 static void* Encrypt(void* arg) {
     EncryptArg* args = (EncryptArg*)arg;
-    printf("encrypt range: %d ~ %d\n", args->begin, args->end);
     int i = args->begin;
     for (; i < args->end; ++i) {
         encrypted_data[i] = encrypt(i, args->key);
@@ -33,11 +31,10 @@ typedef struct Range
 } Range;
 static void* PrefixSum(void* arg) {
     Range* args = (Range*)arg;
-    printf("presum range: %d ~ %d\n", args->begin, args->end);
     int i = args->begin;
-    prefix_sum[i] = encrypted_data[i+1]; i++;
-    for (; i < args->end; ++i) {
-        prefix_sum[i] += prefix_sum[i-1] + encrypted_data[i+1];
+    prefix_sum[i] = encrypted_data[i];
+    for (++i; i < args->end; ++i) {
+        prefix_sum[i] = prefix_sum[i-1] + encrypted_data[i];
     }
 }
 
@@ -48,10 +45,17 @@ typedef struct OffsetArg
 } OffsetArg;
 static void* Offset(void* arg) {
     OffsetArg* args = (OffsetArg*)arg;
-    printf("offset range: %d ~ %d\n", args->begin, args->end);
     int i = args->begin;
     for (; i < args->end; ++i) {
         prefix_sum[i] += args->displacement;
+    }
+}
+
+void singleThread() {
+    uint32_t sum = 0;
+    for (int i = 1; i <= n; i++) {
+        sum += encrypt(i, key);
+        prefix_sum[i] = sum;
     }
 }
 
@@ -71,11 +75,10 @@ int main() {
         int blockSize = ceil( (float)n / MAX_THREAD );
         EncryptArg A[MAX_THREAD];
         for (int i = 0; i < MAX_THREAD; ++i) {
-            A[i].begin = i*blockSize;
-            A[i].end = min(n, A[i].begin + blockSize);
+            A[i].begin = i*blockSize + 1;
+            A[i].end = min(n + 1, A[i].begin + blockSize);
             A[i].key = key;
             pthread_create(&threads[i], DEFAULT, Encrypt, &A[i]);
-            printf("thread %d created with %d tasks\n", i, A[i].end - A[i].begin);
         }
 
         // synchronization
@@ -86,8 +89,8 @@ int main() {
         // distribute tasks
         Range R[MAX_THREAD];
         for (int i = 0; i < MAX_THREAD; ++i) {
-            R[i].begin = i*blockSize;
-            R[i].end   = min(n, R[i].begin + blockSize);
+            R[i].begin = i*blockSize +1 ;
+            R[i].end   = min(n + 1, R[i].begin + blockSize);
             pthread_create(&threads[i], DEFAULT, PrefixSum, &R[i]);
         }
 
@@ -99,12 +102,12 @@ int main() {
 
         // distribute tasks
         for (int i = 1; i < MAX_THREAD; ++i) {
-            const int begin = i*blockSize;
-            const int end   = min(n, begin + blockSize);
+            const int begin = i*blockSize + 1;
+            const int end   = min(n + 1, begin + blockSize);
             const int subBlockSize = ceil( (float)(end - begin) / MAX_THREAD );
             OffsetArg O[MAX_THREAD];
             for (int m = 0; m < MAX_THREAD; ++m) {
-                O[m].displacement = prefix_sum[i*blockSize-1];
+                O[m].displacement = prefix_sum[begin-1];
                 O[m].begin = begin + m*subBlockSize;
                 O[m].end   = min(end, O[m].begin + subBlockSize);
                 pthread_create(&threads[m], DEFAULT, Offset, &O[m]);
@@ -113,23 +116,10 @@ int main() {
             // synchronization
             for (int i = 1; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
 
-            printf("\n");
         }
-
-        uint32_t sum = 0;
-        for (int i = 1; i <= n; i++) {
-            sum += encrypt(i, key);
-            check[i] = sum;
-        }
-
-        for (int i = 1; i <= n; i++) {
-            printf("%d ", check[i]);
-        } printf("\n");
-        for (int i = 1; i <= n; i++) {
-            printf("%d ", prefix_sum[i]);
-        } printf("\n");
 
         output(prefix_sum, n);
     }
+    
     return 0;
 }
