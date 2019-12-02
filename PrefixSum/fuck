@@ -1,0 +1,32 @@
+encrypt range: 0 ~ 1
+thread 0 created with 1 tasks
+thread 1 created with 1 tasks
+encrypt range: 1 ~ 2
+thread 2 created with 1 tasks
+encrypt range: 2 ~ 3
+thread 3 created with 0 tasks
+encrypt range: 3 ~ 3
+presum range: 0 ~ 1
+presum range: 1 ~ 2
+presum range: 2 ~ 3
+presum range: 3 ~ 3
+offset range: 1 ~ 2
+offset range: 2 ~ 3
+offset range: 3 ~ 3
+0
+thread 0 created with 3 tasks
+encrypt range: 0 ~ 3
+encrypt range: 3 ~ 6
+thread 1 created with 3 tasks
+thread 2 created with 3 tasks
+encrypt range: 6 ~ 9
+thread 3 created with 1 tasks
+encrypt range: 9 ~ 10
+presum range: 0 ~ 3
+presum range: 3 ~ 6
+presum range: 6 ~ 9
+presum range: 9 ~ 10
+offset range: 3 ~ 6
+offset range: 6 ~ 9
+offset range: 9 ~ 10
+261337184
