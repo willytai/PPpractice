@@ -7,7 +7,7 @@
 #include "utils.h"
  
 #define MAXN 10000005
-#define MAX_THREAD 4
+#define MAX_THREAD 2
 #define DEFAULT NULL
 
 uint32_t prefix_sum[MAXN];
@@ -23,6 +23,22 @@ static void* Encrypt(void* arg) {
     for (; i < args->end; ++i) {
         encrypted_data[i] = encrypt(i, args->key);
     }
+    pthread_exit(NULL);
+}
+
+void parallelEncrypt(pthread_t* threads, int n, uint32_t key, int blockSize) {
+
+    // distribute tasks
+    EncryptArg A[MAX_THREAD];
+    for (int i = 0; i < MAX_THREAD; ++i) {
+        A[i].begin = i*blockSize + 1;
+        A[i].end = min(n + 1, A[i].begin + blockSize);
+        A[i].key = key;
+        pthread_create(&threads[i], DEFAULT, Encrypt, &A[i]);
+    }
+
+    // synchronization
+    for (int i = 0; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
 }
 
 typedef struct Range
@@ -36,6 +52,20 @@ static void* PrefixSum(void* arg) {
     for (++i; i < args->end; ++i) {
         prefix_sum[i] = prefix_sum[i-1] + encrypted_data[i];
     }
+    pthread_exit(NULL);
+}
+void parallelAccumulate(pthread_t* threads, int n, int blockSize) {
+
+    // distribute tasks
+    Range R[MAX_THREAD];
+    for (int i = 0; i < MAX_THREAD; ++i) {
+        R[i].begin = i*blockSize +1 ;
+        R[i].end   = min(n + 1, R[i].begin + blockSize);
+        pthread_create(&threads[i], DEFAULT, PrefixSum, &R[i]);
+    }
+
+    // synchronization
+    for (int i = 0; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
 }
 
 typedef struct OffsetArg
@@ -44,14 +74,34 @@ typedef struct OffsetArg
     int begin, end;
 } OffsetArg;
 static void* Offset(void* arg) {
-    OffsetArg* args = (OffsetArg*)arg;
+    const OffsetArg* args = (OffsetArg*)arg;
     int i = args->begin;
     for (; i < args->end; ++i) {
         prefix_sum[i] += args->displacement;
     }
+    pthread_exit(NULL);
+}
+void parallelFix(pthread_t* threads, int n, int blockSize) {
+
+    // distribute tasks
+    for (int i = 1; i < MAX_THREAD; ++i) {
+        const int begin = i*blockSize + 1;
+        const int end   = min(n + 1, begin + blockSize);
+        const int subBlockSize = ceil( (double)(end - begin) / MAX_THREAD );
+        OffsetArg O[MAX_THREAD];
+        for (int m = 0; m < MAX_THREAD; ++m) {
+            O[m].displacement = prefix_sum[begin-1];
+            O[m].begin = begin + m*subBlockSize;
+            O[m].end   = min(end, O[m].begin + subBlockSize);
+            pthread_create(&threads[m], DEFAULT, Offset, &O[m]);
+        }
+
+        // synchronization
+        for (int i = 1; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
+    }
 }
 
-void singleThread() {
+void singleThread(int n, uint32_t key) {
     uint32_t sum = 0;
     for (int i = 1; i <= n; i++) {
         sum += encrypt(i, key);
@@ -68,58 +118,23 @@ int main() {
 
         // create threads
         pthread_t threads[MAX_THREAD];
+        int blockSize = ceil( (double)n / MAX_THREAD );
 
         /* parallelize encryption */
-
-        // distribute tasks
-        int blockSize = ceil( (float)n / MAX_THREAD );
-        EncryptArg A[MAX_THREAD];
-        for (int i = 0; i < MAX_THREAD; ++i) {
-            A[i].begin = i*blockSize + 1;
-            A[i].end = min(n + 1, A[i].begin + blockSize);
-            A[i].key = key;
-            pthread_create(&threads[i], DEFAULT, Encrypt, &A[i]);
-        }
-
-        // synchronization
-        for (int i = 0; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
+        parallelEncrypt(threads, n, key, blockSize);
 
         /* parallelize accumulation */
-
-        // distribute tasks
-        Range R[MAX_THREAD];
-        for (int i = 0; i < MAX_THREAD; ++i) {
-            R[i].begin = i*blockSize +1 ;
-            R[i].end   = min(n + 1, R[i].begin + blockSize);
-            pthread_create(&threads[i], DEFAULT, PrefixSum, &R[i]);
-        }
-
-        // synchronization
-        for (int i = 0; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
-
+        parallelAccumulate(threads, n, blockSize);
 
         /* fix value by offsetting */
+        parallelFix(threads, n, blockSize);
 
-        // distribute tasks
-        for (int i = 1; i < MAX_THREAD; ++i) {
-            const int begin = i*blockSize + 1;
-            const int end   = min(n + 1, begin + blockSize);
-            const int subBlockSize = ceil( (float)(end - begin) / MAX_THREAD );
-            OffsetArg O[MAX_THREAD];
-            for (int m = 0; m < MAX_THREAD; ++m) {
-                O[m].displacement = prefix_sum[begin-1];
-                O[m].begin = begin + m*subBlockSize;
-                O[m].end   = min(end, O[m].begin + subBlockSize);
-                pthread_create(&threads[m], DEFAULT, Offset, &O[m]);
-            }
-
-            // synchronization
-            for (int i = 1; i < MAX_THREAD; ++i) pthread_join(threads[i], DEFAULT);
-
-        }
-
+        /* print */
         output(prefix_sum, n);
     }
-    
+
+    // kill the main thread
+    pthread_exit(NULL);
+
     return 0;
 }
